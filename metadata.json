@@ -1,0 +1,5 @@
+{
+  "name": "LeadAnalytics Dashboard",
+  "description": "A comprehensive dark-mode dashboard for analyzing business leads, contact completeness, and categorization from CSV data.",
+  "requestFramePermissions": []
+}
