@@ -23,11 +23,14 @@ export interface Company {
   hasEmail: boolean;
   hasPhone: boolean;
   hasLinkedIn: boolean;
-  isStaff: boolean; // True for Recruiters, Caterers, AV, etc. False for Venues/Clients
+  isStaff: boolean; 
+  leadScore: number; // 0-100
+  status: 'Lead' | 'Contacted' | 'Qualified' | 'Closed'; // For CRM simulation
 }
 
 export interface DashboardMetrics {
   totalCompanies: number;
+  avgLeadScore: number;
   withEmailCount: number;
   withPhoneCount: number;
   completeness: number; // Percentage

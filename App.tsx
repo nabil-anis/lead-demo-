@@ -2,37 +2,44 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Building2, Mail, Phone, CheckCircle2, MapPin, 
   Upload, Download, RefreshCcw, Moon, Sun, Search, 
-  Linkedin, ListFilter, Globe, MessageSquare, Briefcase 
+  Linkedin, ListFilter, Globe, MessageSquare, Briefcase,
+  LayoutDashboard, PieChart as ChartIcon, Users, Settings,
+  ChevronRight, X, Filter, ArrowUpRight, Plus, Star
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, 
-  Bar, XAxis, YAxis, Tooltip, Rectangle 
+  Bar, XAxis, YAxis, Tooltip, AreaChart, Area
 } from 'recharts';
+import Papa from 'papaparse';
 import { UploadModal } from './components/UploadModal';
 import { loadDefaultData, calculateMetrics, parseCSV } from './services/dataService';
 import { Company } from './types';
 
-// Constants for charts
+// Apple-inspired colors
 const COLORS = {
-  email: '#3b82f6',
-  phone: '#10b981',
-  linkedin: '#f59e0b',
-  multiple: '#8b5cf6',
-  background: '#18181b', // surface
-  chartBg: '#27272a'
+  blue: '#0A84FF',
+  green: '#30D158',
+  orange: '#FF9500',
+  red: '#FF453A',
+  purple: '#BF5AF2',
+  gray: '#8E8E93',
+  darkBg: '#1C1C1E',
+  lightBg: '#FFFFFF',
 };
-
-const PIE_DATA = [
-  { name: 'Covered', value: 100 }
-];
 
 const App: React.FC = () => {
   const [data, setData] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'all' | 'staff' | 'clients'>('all');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'companies' | 'insights'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   
+  // Advanced Filters
+  const [filterType, setFilterType] = useState<'all' | 'staff' | 'clients'>('all');
+  const [minScore, setMinScore] = useState(0);
+
   // Initialize data
   useEffect(() => {
     loadDefaultData().then(initialData => {
@@ -41,15 +48,29 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Filter Data based on viewMode
+  // Theme Effect
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+
+  // Filter Data
   const filteredData = useMemo(() => {
     let result = data;
-    if (viewMode === 'staff') {
-      result = data.filter(c => c.isStaff);
-    } else if (viewMode === 'clients') {
-      result = data.filter(c => !c.isStaff);
-    }
+    
+    // Type Filter
+    if (filterType === 'staff') result = result.filter(c => c.isStaff);
+    else if (filterType === 'clients') result = result.filter(c => !c.isStaff);
 
+    // Score Filter
+    if (minScore > 0) result = result.filter(c => c.leadScore >= minScore);
+
+    // Search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(c => 
@@ -59,496 +80,423 @@ const App: React.FC = () => {
       );
     }
     return result;
-  }, [data, viewMode, searchQuery]);
+  }, [data, filterType, minScore, searchQuery]);
 
-  // Calculate Metrics based on filtered data
   const metrics = useMemo(() => calculateMetrics(filteredData), [filteredData]);
 
   const handleUpload = (file: File) => {
+    setLoading(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
       const text = e.target?.result as string;
       const newData = await parseCSV(text);
       setData(newData);
+      setLoading(false);
     };
     reader.readAsText(file);
   };
 
-  const donutData = [
-    { name: 'Email Only', value: metrics.distribution.emailOnly, color: COLORS.email },
-    { name: 'Phone Only', value: metrics.distribution.phoneOnly, color: COLORS.phone },
-    { name: 'LinkedIn Only', value: metrics.distribution.linkedInOnly, color: COLORS.linkedin },
-    { name: 'Multiple', value: metrics.distribution.multiple, color: COLORS.multiple },
-  ];
-
-  // Pagination for table
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  // Pagination Logic Helper
-  const getPaginationGroup = () => {
-    let start = Math.floor((currentPage - 1) / 5) * 5;
-    return new Array(Math.min(5, totalPages - start)).fill(0).map((_, i) => start + i + 1);
+  const handleExport = () => {
+    if (filteredData.length === 0) return;
+    const csvRows = filteredData.map(c => ({
+      Name: c.name,
+      Category: c.category,
+      City: c.city,
+      'Lead Score': c.leadScore,
+      'Phone': c.phones.join('; '),
+      'Email': c.emails.join('; '),
+      'LinkedIn': c.linkedIns.join('; '),
+      'Type': c.isStaff ? 'Service Provider' : 'Client'
+    }));
+    const csv = Papa.unparse(csvRows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `lead_export.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-background flex items-center justify-center text-white">Loading...</div>;
+    return <div className="min-h-screen bg-black flex items-center justify-center text-white font-medium">Initializing Workspace...</div>;
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f11] text-gray-200 font-sans pb-10">
+    <div className="flex h-screen w-full bg-[#F5F5F7] dark:bg-black text-gray-900 dark:text-gray-100 font-sans overflow-hidden transition-colors duration-300">
       
-      {/* --- Top Navigation Bar --- */}
-      <header className="sticky top-0 z-30 bg-[#0f0f11]/95 backdrop-blur-md border-b border-[#27272a] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Analytics</h1>
-          <div className="flex items-center text-sm text-gray-400 mt-1 space-x-2">
-            <span className="flex items-center text-green-500">
-              <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-              Live
-            </span>
-            <span>•</span>
-            <span>{new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+      {/* --- Sidebar Navigation --- */}
+      <aside className="w-64 bg-[#F2F2F7]/50 dark:bg-[#1C1C1E]/50 backdrop-blur-xl border-r border-gray-200 dark:border-white/10 flex flex-col pt-6 pb-4">
+        <div className="px-6 mb-8 flex items-center space-x-2">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <ChartIcon className="text-white" size={18} />
           </div>
+          <span className="text-lg font-bold tracking-tight">LeadAnalytics</span>
         </div>
 
-        <div className="flex items-center space-x-3 overflow-x-auto">
-          <div className="flex bg-[#18181b] rounded-lg p-1 border border-[#27272a]">
-            <button 
-              onClick={() => setViewMode('all')}
-              className={`px-4 py-1.5 text-sm rounded-md font-medium transition-all ${viewMode === 'all' ? 'bg-[#27272a] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-            >
-              All
-            </button>
-            <button 
-              onClick={() => setViewMode('staff')}
-              className={`px-4 py-1.5 text-sm rounded-md font-medium transition-all flex items-center space-x-2 ${viewMode === 'staff' ? 'bg-[#27272a] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-            >
-              <Briefcase size={14} className="mr-1.5" /> Staff & Services
-            </button>
-            <button 
-              onClick={() => setViewMode('clients')}
-              className={`px-4 py-1.5 text-sm rounded-md font-medium transition-all flex items-center space-x-2 ${viewMode === 'clients' ? 'bg-[#27272a] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-            >
-               <Building2 size={14} className="mr-1.5" /> Hiring Clients
-            </button>
-          </div>
-
-          <div className="h-6 w-px bg-[#27272a] mx-2"></div>
-
-          <button className="p-2 text-gray-400 hover:text-white bg-[#18181b] rounded-lg border border-[#27272a] transition-colors">
-            <Moon size={18} />
-          </button>
+        <nav className="flex-1 px-3 space-y-1">
+          <SidebarItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+          <SidebarItem icon={Building2} label="Companies" active={activeTab === 'companies'} onClick={() => setActiveTab('companies')} />
+          <SidebarItem icon={ChartIcon} label="Insights" active={activeTab === 'insights'} onClick={() => setActiveTab('insights')} />
           
+          <div className="mt-8 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Smart Groups</div>
+          <SidebarItem icon={Star} label="High Value Leads" onClick={() => { setMinScore(80); setActiveTab('companies'); }} active={minScore === 80} />
+          <SidebarItem icon={Mail} label="Missing Emails" onClick={() => { /* Logic would go here */ setActiveTab('companies'); }} />
+        </nav>
+
+        <div className="px-3 mt-auto space-y-2">
           <button 
             onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white rounded-lg border border-[#27272a] text-sm font-medium transition-all"
+            className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
           >
-            <Upload size={16} />
-            <span>Upload</span>
+            <Upload size={18} />
+            <span>Import Data</span>
           </button>
-          
-          <button className="flex items-center space-x-2 px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white rounded-lg border border-[#27272a] text-sm font-medium transition-all">
-            <Download size={16} />
-            <span>Export</span>
-          </button>
-
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white text-black hover:bg-gray-200 rounded-lg text-sm font-bold transition-all">
-            <RefreshCcw size={16} />
-            <span>Refresh</span>
-          </button>
+          <div className="flex items-center justify-between px-3 py-2">
+             <div className="flex items-center space-x-2 text-sm text-gray-500">
+               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+               <span>Online</span>
+             </div>
+             <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+             </button>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="px-6 py-8 max-w-[1600px] mx-auto space-y-6">
+      {/* --- Main Content Area --- */}
+      <main className="flex-1 overflow-y-auto h-full p-6 lg:p-10 relative">
         
-        {/* --- KPI Cards Row --- */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <KpiCard icon={Building2} label="TOTAL COMPANIES" value={metrics.totalCompanies} sub="" />
-          <KpiCard icon={Mail} label="WITH EMAIL" value={metrics.withEmailCount} sub={`${metrics.emailCoverage}% coverage`} />
-          <KpiCard icon={Phone} label="WITH PHONE" value={metrics.withPhoneCount} sub={`${metrics.phoneCoverage}% coverage`} />
-          <KpiCard icon={CheckCircle2} label="COMPLETENESS" value={`${metrics.completeness}%`} sub="" />
-          <KpiCard icon={MapPin} label="LOCATIONS" value={metrics.locationCount} sub={`${metrics.locationCount} cities`} />
-        </div>
-
-        {/* --- Charts Row 1 --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Data Source Card */}
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 relative overflow-hidden">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-[#27272a] rounded-lg text-gray-400">
-                  <ListFilter size={20} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">Data Source</h3>
-                  <p className="text-xs text-gray-500">Provider breakdown</p>
-                </div>
-              </div>
-            </div>
-            <div className="h-48 flex items-center justify-center relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={PIE_DATA}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    startAngle={90}
-                    endAngle={-270}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                     <Cell key="cell-0" fill="#ffffff" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                 <span className="text-2xl font-bold text-white">100%</span>
-                 <span className="text-xs text-gray-500 uppercase tracking-wider">Coverage</span>
-              </div>
-            </div>
-            <div className="flex justify-between items-center mt-4 text-sm border-t border-[#27272a] pt-4">
-               <div className="flex items-center space-x-2">
-                 <div className="w-2 h-2 rounded-full bg-white"></div>
-                 <span className="text-gray-400">Google Maps</span>
-               </div>
-               <span className="font-semibold">{metrics.totalCompanies}</span>
-            </div>
+        {/* Header */}
+        <header className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight mb-1 text-gray-900 dark:text-white">
+              {activeTab === 'dashboard' ? 'Overview' : activeTab === 'companies' ? 'Company Directory' : 'Market Insights'}
+            </h1>
+            <p className="text-gray-500 text-sm">Welcome back, here's what's happening today.</p>
           </div>
-
-          {/* Contact Quality Card */}
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-[#27272a] rounded-lg text-gray-400">
-                  <Mail size={20} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">Contact Quality</h3>
-                  <p className="text-xs text-gray-500">Data availability rates</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="space-y-6">
-              <QualityBar label="Email" count={metrics.withEmailCount} percentage={metrics.emailCoverage} />
-              <QualityBar label="Phone" count={metrics.withPhoneCount} percentage={metrics.phoneCoverage} />
-              <QualityBar label="LinkedIn" count={filteredData.filter(c => c.hasLinkedIn).length} percentage={metrics.linkedInCoverage} />
-            </div>
-
-            <div className="flex justify-between items-center mt-8 pt-4 border-t border-[#27272a]">
-              <span className="text-sm text-gray-500 uppercase font-medium">Overall</span>
-              <span className="text-2xl font-bold text-white">{metrics.completeness}%</span>
-            </div>
-          </div>
-
-          {/* Distribution Card */}
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-[#27272a] rounded-lg text-gray-400">
-                  <PieChartIcon size={20} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">Distribution</h3>
-                  <p className="text-xs text-gray-500">Contact breakdown</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex flex-col items-center justify-center h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={donutData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={2}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {donutData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#27272a', borderColor: '#3f3f46', borderRadius: '8px', color: '#fff' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-xs mt-2">
-              {donutData.map((item, idx) => (
-                <div key={idx} className="flex items-center space-x-2">
-                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></div>
-                   <span className="text-gray-400">{item.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* --- Charts Row 2 --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
-          {/* Top Categories */}
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-             <div className="flex justify-between items-start mb-6">
-               <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-[#27272a] rounded-lg text-gray-400">
-                    <TrendingUp size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">Top Categories</h3>
-                    <p className="text-xs text-gray-500">Top {metrics.topCategories.length} industries</p>
-                  </div>
-               </div>
-               <div className="text-right">
-                 <div className="text-2xl font-bold">{metrics.topCategories.reduce((acc, curr) => acc + curr.value, 0)}</div>
-                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Entries</div>
-               </div>
+          <div className="flex items-center space-x-4">
+             <div className="relative group">
+               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={16} />
+               <input 
+                 type="text" 
+                 placeholder="Search..." 
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className="pl-10 pr-4 py-2 w-64 bg-white dark:bg-[#2C2C2E] border border-gray-200 dark:border-white/10 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-gray-900 dark:text-gray-100 placeholder-gray-400"
+               />
              </div>
-             
-             <div className="space-y-4">
-                {metrics.topCategories.map((cat, idx) => {
-                   const maxVal = metrics.topCategories[0]?.value || 1;
-                   const width = (cat.value / maxVal) * 100;
-                   // Cycle through bright colors
-                   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1', '#10b981'];
-                   const color = colors[idx % colors.length];
-
-                   return (
-                     <div key={idx} className="flex items-center text-xs">
-                        <div className="w-24 truncate text-gray-400 mr-2" title={cat.name}>{cat.name}</div>
-                        <div className="flex-1 h-3 bg-[#27272a] rounded-full overflow-hidden">
-                           <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }}></div>
-                        </div>
-                     </div>
-                   );
-                })}
-             </div>
+             <button onClick={handleExport} className="p-2 bg-white dark:bg-[#2C2C2E] border border-gray-200 dark:border-white/10 rounded-full hover:scale-105 transition-transform text-gray-700 dark:text-gray-200">
+               <Download size={18} />
+             </button>
           </div>
+        </header>
 
-          {/* Top Locations */}
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-             <div className="flex justify-between items-start mb-6">
-               <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-[#27272a] rounded-lg text-gray-400">
-                    <MapPin size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">Top Locations</h3>
-                    <p className="text-xs text-gray-500">Top {metrics.topLocations.length} cities</p>
-                  </div>
-               </div>
-               <div className="text-right">
-                 <div className="text-2xl font-bold">{metrics.totalCompanies}</div>
-                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Total</div>
-               </div>
-             </div>
+        {/* --- DASHBOARD VIEW --- */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Bento Grid KPI */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <BentoCard title="Total Leads" value={metrics.totalCompanies} trend="+12% vs last month" icon={Users} color="blue" />
+              <BentoCard title="Avg Lead Score" value={metrics.avgLeadScore} trend="High Quality" icon={Star} color="orange" />
+              <BentoCard title="Email Coverage" value={`${metrics.emailCoverage}%`} trend={`${metrics.withEmailCount} valid`} icon={Mail} color="green" />
+              <BentoCard title="Top Location" value={metrics.topLocations[0]?.name || 'N/A'} trend={`${metrics.topLocations[0]?.value || 0} leads`} icon={MapPin} color="purple" />
+            </div>
 
-             <div className="h-64 w-full">
+            {/* Main Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 glass-panel rounded-3xl p-6 h-96 flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-semibold text-lg text-gray-900 dark:text-white">Lead Distribution by City</h3>
+                  <button className="text-xs font-medium text-blue-500 hover:underline">View Report</button>
+                </div>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={metrics.topLocations} barSize={20}>
-                    <Tooltip 
-                       cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                       contentStyle={{ backgroundColor: '#27272a', borderColor: '#3f3f46', borderRadius: '8px', color: '#fff' }}
-                    />
-                    <Bar dataKey="value" fill="#ffffff" radius={[4, 4, 0, 0]} activeBar={<Rectangle fill="#3b82f6" />} />
+                  <BarChart data={metrics.topLocations} barSize={32}>
                     <XAxis 
                       dataKey="name" 
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{fill: '#71717a', fontSize: 10}} 
-                      interval={0}
+                      tick={{fill: theme === 'dark' ? '#8E8E93' : '#6b7280', fontSize: 12}} 
+                      dy={10} 
                     />
+                    <Tooltip 
+                      cursor={{fill: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}} 
+                      content={<CustomTooltip theme={theme} />} 
+                    />
+                    <Bar dataKey="value" fill={COLORS.blue} radius={[6, 6, 6, 6]} />
                   </BarChart>
                 </ResponsiveContainer>
-             </div>
-          </div>
-        </div>
+              </div>
 
-        {/* --- Contact Directory --- */}
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-           <div className="mb-6">
-             <h2 className="text-lg font-bold text-white">Contact Directory</h2>
-             <p className="text-sm text-gray-500">Quick access to collected contact information</p>
-           </div>
+              <div className="glass-panel rounded-3xl p-6 h-96 flex flex-col">
+                <h3 className="font-semibold text-lg mb-6 text-gray-900 dark:text-white">Completeness</h3>
+                <div className="flex-1 flex items-center justify-center relative">
+                   <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Complete', value: metrics.completeness },
+                          { name: 'Incomplete', value: 100 - metrics.completeness }
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        startAngle={90}
+                        endAngle={-270}
+                        paddingAngle={5}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        <Cell fill={COLORS.green} />
+                        <Cell fill={theme === 'dark' ? '#2C2C2E' : '#E5E5EA'} />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">{metrics.completeness}%</span>
+                    <span className="text-xs text-gray-500 font-medium uppercase">Quality</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Emails */}
-              <ContactList 
-                 icon={Mail} 
-                 title="Email Addresses" 
-                 count={filteredData.flatMap(c => c.emails).length} 
-                 items={filteredData.flatMap(c => c.emails).filter(Boolean)} 
-                 limit={6}
-                 colorClass="text-blue-500 hover:text-blue-400"
-              />
-              {/* Phones */}
-              <ContactList 
-                 icon={Phone} 
-                 title="Phone Numbers" 
-                 count={filteredData.flatMap(c => c.phones).length} 
-                 items={filteredData.flatMap(c => c.phones).filter(Boolean)} 
-                 limit={6}
-                 colorClass="text-blue-500 hover:text-blue-400"
-              />
-              {/* LinkedIn */}
-              <ContactList 
-                 icon={Linkedin} 
-                 title="LinkedIn Profiles" 
-                 count={filteredData.filter(c => c.hasLinkedIn).length} 
-                 items={filteredData.flatMap(c => c.linkedIns).filter(Boolean)} 
-                 limit={6}
-                 colorClass="text-blue-500 hover:text-blue-400"
-                 isLink
-              />
-              {/* WhatsApp */}
-              <ContactList 
-                 icon={MessageSquare} 
-                 title="WhatsApp Numbers" 
-                 count={filteredData.flatMap(c => c.whatsapps).length} 
-                 items={filteredData.flatMap(c => c.whatsapps).filter(Boolean)} 
-                 limit={6}
-                 colorClass="text-blue-500 hover:text-blue-400"
-                 emptyText="No WhatsApp numbers available"
-              />
-           </div>
-        </div>
-
-        {/* --- Companies Table --- */}
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-[#27272a] flex flex-col md:flex-row md:items-center justify-between gap-4">
-             <div>
-               <h2 className="font-bold text-white">Companies</h2>
-               <p className="text-xs text-gray-500">{filteredData.length} of {data.length} results</p>
-             </div>
-             
-             <div className="flex flex-col md:flex-row gap-3">
-               <div className="relative">
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                 <input 
-                   type="text" 
-                   placeholder="Search companies..." 
-                   className="pl-10 pr-4 py-2 bg-[#0f0f11] border border-[#27272a] rounded-lg text-sm text-gray-300 focus:outline-none focus:border-blue-500 w-full md:w-64"
-                   value={searchQuery}
-                   onChange={(e) => setSearchQuery(e.target.value)}
-                 />
+            {/* Quick Actions / Recent */}
+            <div className="glass-panel rounded-3xl p-6">
+               <h3 className="font-semibold text-lg mb-4 text-gray-900 dark:text-white">Recent Companies</h3>
+               <div className="overflow-x-auto">
+                 <table className="w-full text-left">
+                   <thead>
+                     <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200 dark:border-white/5">
+                       <th className="pb-3 pl-2">Company</th>
+                       <th className="pb-3">Score</th>
+                       <th className="pb-3">Category</th>
+                       <th className="pb-3">City</th>
+                       <th className="pb-3 text-right">Action</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {filteredData.slice(0, 5).map((company, idx) => (
+                       <tr key={idx} className="group hover:bg-gray-100 dark:hover:bg-white/5 transition-colors cursor-pointer" onClick={() => setSelectedCompany(company)}>
+                         <td className="py-3 pl-2 border-b border-gray-100 dark:border-white/5 font-medium text-gray-900 dark:text-gray-100">{company.name}</td>
+                         <td className="py-3 border-b border-gray-100 dark:border-white/5">
+                           <ScoreBadge score={company.leadScore} />
+                         </td>
+                         <td className="py-3 border-b border-gray-100 dark:border-white/5 text-gray-500">{company.category}</td>
+                         <td className="py-3 border-b border-gray-100 dark:border-white/5 text-gray-500">{company.city}</td>
+                         <td className="py-3 border-b border-gray-100 dark:border-white/5 text-right">
+                           <button className="text-blue-500 hover:bg-blue-500/10 p-1.5 rounded-full transition-colors">
+                             <ChevronRight size={16} />
+                           </button>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
                </div>
-               
-               <div className="flex items-center space-x-2">
-                 <button className="px-3 py-2 bg-[#0f0f11] border border-[#27272a] rounded-lg text-xs font-medium text-gray-300 flex items-center">
-                   <ListFilter size={14} className="mr-2" /> All Categories
-                 </button>
-                 <button className="px-3 py-2 bg-[#0f0f11] border border-[#27272a] rounded-lg text-xs font-medium text-gray-300 flex items-center">
-                   All Cities
-                 </button>
-               </div>
-             </div>
+            </div>
           </div>
+        )}
 
-          <div className="overflow-x-auto">
-             <table className="w-full text-left border-collapse">
-               <thead>
-                 <tr className="border-b border-[#27272a] text-xs uppercase text-gray-500 font-semibold tracking-wider">
-                   <th className="p-4">Company</th>
-                   <th className="p-4">Category</th>
-                   <th className="p-4">Location</th>
-                   <th className="p-4">Contact</th>
-                 </tr>
-               </thead>
-               <tbody className="text-sm">
-                 {paginatedData.map((company, i) => (
-                   <tr key={`${company.id}-${i}`} className="border-b border-[#27272a] hover:bg-[#27272a]/50 transition-colors">
-                     <td className="p-4 font-medium text-white">{company.name}</td>
-                     <td className="p-4 text-gray-400">{company.category}</td>
-                     <td className="p-4 text-gray-400">{company.city || '—'}</td>
-                     <td className="p-4">
-                       <div className="flex space-x-2">
-                         {company.hasPhone && (
-                           <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 cursor-pointer hover:bg-blue-500/20" title={company.phones[0]}>
-                             <Phone size={12} />
-                           </div>
-                         )}
-                         {company.hasEmail && (
-                           <div className="w-6 h-6 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500 cursor-pointer hover:bg-orange-500/20" title={company.emails[0]}>
-                             <Mail size={12} />
-                           </div>
-                         )}
-                         {company.hasLinkedIn && (
-                           <div className="w-6 h-6 rounded-full bg-blue-600/10 flex items-center justify-center text-blue-600 cursor-pointer hover:bg-blue-600/20">
-                             <Linkedin size={12} />
-                           </div>
-                         )}
-                         {company.googleMapsUrl && (
-                            <a href={company.googleMapsUrl} target="_blank" rel="noreferrer" className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center text-green-500 cursor-pointer hover:bg-green-500/20">
-                              <Globe size={12} />
-                            </a>
-                         )}
-                       </div>
-                     </td>
-                   </tr>
-                 ))}
-                 {paginatedData.length === 0 && (
-                   <tr>
-                     <td colSpan={4} className="p-8 text-center text-gray-500">
-                       No companies found matching your criteria.
-                     </td>
-                   </tr>
-                 )}
-               </tbody>
-             </table>
-          </div>
-
-          <div className="p-4 border-t border-[#27272a] flex items-center justify-between text-xs text-gray-500">
-             <div className="flex items-center space-x-2">
-               <span>Show</span>
-               <select className="bg-[#0f0f11] border border-[#27272a] rounded px-2 py-1 focus:outline-none">
-                 <option>10</option>
-                 <option>20</option>
-                 <option>50</option>
+        {/* --- COMPANIES VIEW --- */}
+        {activeTab === 'companies' && (
+          <div className="animate-fade-in space-y-6">
+            <div className="flex space-x-2 pb-2 overflow-x-auto">
+               <FilterButton label="All" active={filterType === 'all'} onClick={() => setFilterType('all')} />
+               <FilterButton label="Service Providers" active={filterType === 'staff'} onClick={() => setFilterType('staff')} />
+               <FilterButton label="Hiring Clients" active={filterType === 'clients'} onClick={() => setFilterType('clients')} />
+               <div className="h-8 w-px bg-gray-300 dark:bg-white/20 mx-2"></div>
+               <select 
+                className="bg-transparent text-sm font-medium focus:outline-none text-gray-600 dark:text-gray-300 border-none"
+                value={minScore}
+                onChange={(e) => setMinScore(Number(e.target.value))}
+               >
+                 <option value={0} className="bg-white dark:bg-[#1C1C1E]">Any Score</option>
+                 <option value={50} className="bg-white dark:bg-[#1C1C1E]">Score 50+</option>
+                 <option value={80} className="bg-white dark:bg-[#1C1C1E]">Score 80+ (High Value)</option>
                </select>
-             </div>
-             
-             <div className="flex items-center space-x-1">
-               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#27272a] disabled:opacity-50"
-               >
-                 &lt;
-               </button>
-               {getPaginationGroup().map(item => (
-                 <button 
-                    key={item}
-                    onClick={() => setCurrentPage(item)}
-                    className={`w-8 h-8 flex items-center justify-center rounded-full font-medium transition-colors ${currentPage === item ? 'bg-white text-black' : 'hover:bg-[#27272a]'}`}
-                 >
-                   {item}
-                 </button>
-               ))}
-               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#27272a] disabled:opacity-50"
-               >
-                 &gt;
-               </button>
+            </div>
+
+            <div className="glass-panel rounded-3xl overflow-hidden">
+               <div className="overflow-x-auto">
+                 <table className="w-full text-left border-collapse">
+                   <thead className="bg-gray-50/50 dark:bg-white/5">
+                     <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                       <th className="p-5">Company Name</th>
+                       <th className="p-5">Lead Score</th>
+                       <th className="p-5">Role</th>
+                       <th className="p-5">Contact Info</th>
+                       <th className="p-5">Location</th>
+                     </tr>
+                   </thead>
+                   <tbody className="text-sm">
+                     {filteredData.slice(0, 50).map((company, i) => ( // Limiting render for perf
+                       <tr 
+                        key={i} 
+                        onClick={() => setSelectedCompany(company)}
+                        className="border-b border-gray-100 dark:border-white/5 hover:bg-blue-50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group"
+                       >
+                         <td className="p-5 font-medium text-gray-900 dark:text-gray-100">{company.name}</td>
+                         <td className="p-5">
+                            <div className="flex items-center space-x-2">
+                               <div className="w-16 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-500 rounded-full" style={{width: `${company.leadScore}%`}}></div>
+                               </div>
+                               <span className="text-xs text-gray-500">{company.leadScore}</span>
+                            </div>
+                         </td>
+                         <td className="p-5">
+                           <span className={`px-2 py-1 rounded-md text-xs font-medium ${company.isStaff ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300'}`}>
+                             {company.isStaff ? 'Provider' : 'Client'}
+                           </span>
+                         </td>
+                         <td className="p-5">
+                            <div className="flex space-x-2 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
+                              {company.hasEmail && <Mail size={16} />}
+                              {company.hasPhone && <Phone size={16} />}
+                              {company.hasLinkedIn && <Linkedin size={16} />}
+                            </div>
+                         </td>
+                         <td className="p-5 text-gray-500">{company.city || '-'}</td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+               {filteredData.length > 50 && (
+                 <div className="p-4 text-center text-xs text-gray-500">
+                   Showing first 50 of {filteredData.length} results
+                 </div>
+               )}
+            </div>
+          </div>
+        )}
+
+        {/* --- INSIGHTS VIEW --- */}
+        {activeTab === 'insights' && (
+          <div className="animate-fade-in space-y-6">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="glass-panel rounded-3xl p-8">
+                 <h3 className="font-bold text-xl mb-2 text-gray-900 dark:text-white">Category Distribution</h3>
+                 <p className="text-sm text-gray-500 mb-6">Top sectors in your current dataset.</p>
+                 <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={metrics.topCategories}>
+                        <defs>
+                          <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0A84FF" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#0A84FF" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="name" hide />
+                        <Tooltip content={<CustomTooltip theme={theme} />} />
+                        <Area type="monotone" dataKey="value" stroke="#0A84FF" fillOpacity={1} fill="url(#colorVal)" strokeWidth={3} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                 </div>
+                 <div className="mt-4 space-y-3">
+                   {metrics.topCategories.slice(0,5).map((cat, i) => (
+                     <div key={i} className="flex justify-between text-sm items-center border-b border-gray-100 dark:border-white/5 pb-2">
+                       <span className="font-medium text-gray-900 dark:text-gray-200">{cat.name}</span>
+                       <span className="text-gray-500">{cat.value}</span>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+               <div className="glass-panel rounded-3xl p-8">
+                 <h3 className="font-bold text-xl mb-2 text-gray-900 dark:text-white">Contact Methods</h3>
+                 <p className="text-sm text-gray-500 mb-6">Breakdown of available contact points.</p>
+                 <div className="space-y-6">
+                   <InsightRow label="Email Address" value={metrics.emailCoverage} color="bg-blue-500" icon={Mail} />
+                   <InsightRow label="Phone Number" value={metrics.phoneCoverage} color="bg-green-500" icon={Phone} />
+                   <InsightRow label="LinkedIn Profile" value={metrics.linkedInCoverage} color="bg-orange-500" icon={Linkedin} />
+                 </div>
+               </div>
              </div>
           </div>
-        </div>
-
+        )}
       </main>
+
+      {/* --- COMPANY DETAIL SLIDE-OVER (DRAWER) --- */}
+      <div 
+        className={`fixed inset-y-0 right-0 w-full md:w-[480px] bg-white dark:bg-[#1C1C1E] shadow-2xl border-l border-gray-200 dark:border-white/10 transform transition-transform duration-300 ease-in-out z-50 ${selectedCompany ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        {selectedCompany && (
+          <div className="h-full flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100 dark:border-white/10 flex justify-between items-start">
+               <div>
+                  <div className="flex items-center space-x-2 mb-2">
+                     <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide ${selectedCompany.isStaff ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {selectedCompany.isStaff ? 'Service Provider' : 'Hiring Client'}
+                     </span>
+                     <ScoreBadge score={selectedCompany.leadScore} />
+                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedCompany.name}</h2>
+                  <p className="text-gray-500 text-sm flex items-center mt-1">
+                    <MapPin size={14} className="mr-1" /> {selectedCompany.city} • {selectedCompany.category}
+                  </p>
+               </div>
+               <button onClick={() => setSelectedCompany(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500">
+                 <X size={20} />
+               </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+               
+               {/* Quick Actions */}
+               <div className="grid grid-cols-2 gap-3">
+                 <button className="flex items-center justify-center space-x-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors shadow-lg shadow-blue-500/30">
+                    <Mail size={16} /> <span>Email Now</span>
+                 </button>
+                 <button className="flex items-center justify-center space-x-2 py-2.5 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 rounded-xl font-medium transition-colors text-gray-900 dark:text-white">
+                    <Phone size={16} /> <span>Call</span>
+                 </button>
+               </div>
+
+               {/* Contact Info */}
+               <section>
+                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Contact Information</h3>
+                 <div className="space-y-4">
+                    <DetailRow icon={Mail} label="Emails" values={selectedCompany.emails} empty="No emails found" />
+                    <DetailRow icon={Phone} label="Phones" values={selectedCompany.phones} empty="No phones found" />
+                    <DetailRow icon={Linkedin} label="LinkedIn" values={selectedCompany.linkedIns} empty="No profiles found" isLink />
+                    <DetailRow icon={MessageSquare} label="WhatsApp" values={selectedCompany.whatsapps} empty="No numbers found" />
+                 </div>
+               </section>
+
+               {/* Metadata */}
+               <section>
+                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Metadata</h3>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-2xl">
+                       <div className="text-xs text-gray-500 mb-1">Source</div>
+                       <div className="font-medium text-gray-900 dark:text-white">CSV Import</div>
+                    </div>
+                    <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-2xl">
+                       <div className="text-xs text-gray-500 mb-1">Maps URL</div>
+                       {selectedCompany.googleMapsUrl ? (
+                         <a href={selectedCompany.googleMapsUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline flex items-center text-sm">
+                           View Map <ArrowUpRight size={12} className="ml-1" />
+                         </a>
+                       ) : <span className="text-sm text-gray-400">N/A</span>}
+                    </div>
+                 </div>
+               </section>
+            </div>
+            
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-[#1C1C1E]">
+               <button className="w-full py-3 border border-gray-300 dark:border-white/20 rounded-xl text-sm font-medium text-gray-700 dark:text-white hover:bg-gray-200 dark:hover:bg-white/5 transition-colors">
+                 Edit Company Details
+               </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <UploadModal 
         isOpen={isUploadModalOpen} 
@@ -559,93 +507,130 @@ const App: React.FC = () => {
   );
 };
 
-// --- Sub-components for cleaner App.tsx ---
+// --- Helper Components ---
 
-const KpiCard = ({ icon: Icon, label, value, sub }: { icon: any, label: string, value: string | number, sub: string }) => (
-  <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 flex flex-col justify-between h-32 hover:border-gray-600 transition-colors group">
-     <div className="w-8 h-8 rounded-lg bg-[#27272a] flex items-center justify-center text-gray-400 group-hover:text-white group-hover:bg-[#3f3f46] transition-all mb-4">
-       <Icon size={16} />
-     </div>
-     <div>
-       <div className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-1">{label}</div>
-       <div className="text-3xl font-bold text-white tracking-tight">{value}</div>
-       {sub && <div className="text-[10px] text-gray-500 mt-1">{sub}</div>}
-     </div>
-  </div>
+const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+      active 
+        ? 'bg-blue-500 text-white shadow-md shadow-blue-500/25' 
+        : 'text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10'
+    }`}
+  >
+    <Icon size={18} />
+    <span>{label}</span>
+  </button>
 );
 
-const QualityBar = ({ label, count, percentage }: { label: string, count: number, percentage: number }) => (
-  <div>
-    <div className="flex items-center space-x-2 text-xs mb-1.5">
-       <span className={`
-         ${label === 'Email' ? 'text-gray-400' : ''}
-         ${label === 'Phone' ? 'text-gray-400' : ''}
-         ${label === 'LinkedIn' ? 'text-gray-400' : ''}
-       `}>
-         <span className={`inline-block w-3 h-3 mr-2 ${
-           label === 'Email' ? 'bg-white text-black' : 
-           label === 'Phone' ? 'text-white' : 
-           'text-gray-500' 
-         }`}>
-           {label === 'Email' ? <Mail size={12} className="text-black"/> : 
-            label === 'Phone' ? <Phone size={12} className="text-gray-400"/> : 
-            <Linkedin size={12} className="text-gray-400"/>}
-         </span>
-         {label}
-       </span>
-    </div>
-    <div className="flex items-center">
-       <div className="flex-1 h-2 bg-[#27272a] rounded-full overflow-hidden mr-4">
-          <div className="h-full bg-white rounded-full" style={{ width: `${percentage}%` }}></div>
-       </div>
-       <div className="flex items-center space-x-3 w-20 justify-end text-xs">
-          <span className="text-gray-400">{count}</span>
-          <span className="font-bold text-white w-8 text-right">{percentage}%</span>
-       </div>
-    </div>
-  </div>
-);
+const BentoCard = ({ title, value, trend, icon: Icon, color }: any) => {
+  const colorMap: Record<string, string> = {
+    blue: 'bg-blue-500',
+    green: 'bg-green-500',
+    orange: 'bg-orange-500',
+    purple: 'bg-purple-500',
+  };
 
-const ContactList = ({ icon: Icon, title, count, items, limit, colorClass, isLink, emptyText }: any) => (
-  <div>
-    <div className="flex justify-between items-center mb-4">
-      <div className="flex items-center space-x-2 text-white">
-        <Icon size={16} className="text-gray-400" />
-        <span className="font-medium text-sm">{title}</span>
+  return (
+    <div className="glass-panel p-6 rounded-3xl flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300 cursor-default">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`w-10 h-10 rounded-xl ${colorMap[color]} flex items-center justify-center text-white shadow-lg`}>
+          <Icon size={20} />
+        </div>
+        {/* <span className="px-2 py-1 rounded-full bg-white/10 text-[10px] font-bold uppercase tracking-wide text-gray-500">KPI</span> */}
       </div>
-      <span className="px-2 py-0.5 bg-[#27272a] text-[10px] text-gray-400 rounded-md">{count}</span>
+      <div>
+        <h3 className="text-3xl font-bold tracking-tight mb-1 text-gray-900 dark:text-white">{value}</h3>
+        <div className="flex justify-between items-end">
+          <p className="text-sm text-gray-500 font-medium">{title}</p>
+          <span className="text-xs font-semibold text-green-500">{trend}</span>
+        </div>
+      </div>
     </div>
-    <div className="space-y-3">
-       {items.slice(0, limit).map((item: string, idx: number) => (
-         <div key={idx} className={`text-xs truncate ${colorClass} cursor-pointer`}>
-           {isLink ? (
-             <a href={item} target="_blank" rel="noreferrer" className="hover:underline truncate block w-full">{item}</a>
-           ) : item}
-         </div>
-       ))}
-       {items.length === 0 && (
-         <div className="text-xs text-blue-500">{emptyText || 'No data available'}</div>
-       )}
-       {items.length > limit && (
-         <div className="text-[10px] text-gray-500 pt-1">Show {items.length - limit} more</div>
-       )}
+  );
+};
+
+const FilterButton = ({ label, active, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+      active 
+      ? 'bg-black dark:bg-white text-white dark:text-black shadow-md' 
+      : 'bg-white dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/20'
+    }`}
+  >
+    {label}
+  </button>
+);
+
+const ScoreBadge = ({ score }: { score: number }) => {
+  let color = 'bg-gray-100 text-gray-600';
+  if (score >= 80) color = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  else if (score >= 50) color = 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+  
+  return (
+    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${color}`}>
+      {score} / 100
+    </span>
+  );
+};
+
+const DetailRow = ({ icon: Icon, label, values, empty, isLink }: any) => (
+  <div className="flex items-start space-x-4">
+    <div className="mt-1 p-2 bg-gray-50 dark:bg-white/5 rounded-lg text-gray-400">
+      <Icon size={16} />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">{label}</div>
+      {values && values.length > 0 ? (
+        <div className="space-y-1">
+          {values.map((v: string, i: number) => (
+            <div key={i} className="text-sm text-gray-500 break-all">
+              {isLink ? (
+                <a href={v} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">{v}</a>
+              ) : v}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-gray-400 italic">{empty}</div>
+      )}
     </div>
   </div>
 );
 
-// Icon wrapper for Charts
-const PieChartIcon = ({ size }: { size: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
-    <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
-  </svg>
+const InsightRow = ({ label, value, color, icon: Icon }: any) => (
+  <div className="flex items-center justify-between">
+    <div className="flex items-center space-x-3">
+      <div className={`p-2 rounded-lg text-white shadow-md ${color}`}>
+        <Icon size={16} />
+      </div>
+      <span className="font-medium text-gray-900 dark:text-white">{label}</span>
+    </div>
+    <div className="flex items-center space-x-3">
+      <div className="w-32 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${value}%` }}></div>
+      </div>
+      <span className="text-sm font-bold w-8 text-right text-gray-900 dark:text-white">{value}%</span>
+    </div>
+  </div>
 );
 
-const TrendingUp = ({ size }: { size: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-    <polyline points="17 6 23 6 23 12"></polyline>
-  </svg>
-);
+const CustomTooltip = ({ active, payload, label, theme }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className={`
+        backdrop-blur-md p-3 rounded-xl shadow-xl border 
+        ${theme === 'dark' ? 'bg-[#1C1C1E]/90 border-white/10 text-white' : 'bg-white/90 border-gray-100 text-gray-900'}
+      `}>
+        <p className="text-sm font-bold mb-1">{label}</p>
+        <p className="text-sm text-blue-500">
+          {payload[0].value} units
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default App;

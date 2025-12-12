@@ -230,10 +230,15 @@ export const parseCSV = (csvString: string): Promise<Company[]> => {
           });
 
           const category = row.categoryName || 'Uncategorized';
-          
-          // Determine if this is "Staff/Service" or "Client"
           const isStaff = STAFF_SERVICE_KEYWORDS.some(k => category.toLowerCase().includes(k));
 
+          // Calculate Lead Score
+          let score = 0;
+          if (emails.length > 0) score += 40;
+          if (phones.length > 0) score += 30;
+          if (linkedIns.length > 0) score += 20;
+          if (row.city) score += 10;
+          
           return {
             id: `row-${index}`,
             name: row.title || 'Unknown Company',
@@ -243,12 +248,14 @@ export const parseCSV = (csvString: string): Promise<Company[]> => {
             phones,
             linkedIns,
             whatsapps,
-            website: '', // CSV didn't have explicit website col, usually extracted from email domain or title
+            website: '',
             googleMapsUrl: row.url || '',
             hasEmail: emails.length > 0,
             hasPhone: phones.length > 0,
             hasLinkedIn: linkedIns.length > 0,
-            isStaff
+            isStaff,
+            leadScore: score,
+            status: 'Lead'
           };
         });
         resolve(processed);
@@ -266,6 +273,7 @@ export const calculateMetrics = (companies: Company[]): DashboardMetrics => {
   if (total === 0) {
     return {
       totalCompanies: 0,
+      avgLeadScore: 0,
       withEmailCount: 0,
       withPhoneCount: 0,
       completeness: 0,
@@ -299,12 +307,15 @@ export const calculateMetrics = (companies: Company[]): DashboardMetrics => {
 
   // Calculate completeness score (weighted average of fields present)
   let totalScore = 0;
+  let totalLeadScore = 0;
   companies.forEach(c => {
     if (c.hasEmail) totalScore += 33.3;
     if (c.hasPhone) totalScore += 33.3;
     if (c.hasLinkedIn) totalScore += 33.3;
+    totalLeadScore += c.leadScore;
   });
   const completeness = Math.round(totalScore / total);
+  const avgLeadScore = Math.round(totalLeadScore / total);
 
   // Aggregation for charts
   const categories: Record<string, number> = {};
@@ -329,6 +340,7 @@ export const calculateMetrics = (companies: Company[]): DashboardMetrics => {
 
   return {
     totalCompanies: total,
+    avgLeadScore,
     withEmailCount: withEmail,
     withPhoneCount: withPhone,
     completeness,
